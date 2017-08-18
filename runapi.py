@@ -11,9 +11,7 @@ from urllib.parse import urlencode
 import random
 import time
 import re
-import logconfig
 import os, sys
-
 try:
     import xlrd
 except:
@@ -26,17 +24,15 @@ except ImportError as e:
     from pyDes import *
 import hashlib
 import base64
-import smtplib
-from email.mime.text import MIMEText
+import basedata,sendmail,logconfig,getcookie
 
 logging = logconfig.getlogger("")
-PROJECT_LOCATION = os.path.abspath('.')
 
 def runTest(testCaseFile):
-    testCaseFile = PROJECT_LOCATION+'\TestCase\TestCase.xlsx'
+    testCaseFile = basedata.PROJECT_LOCATION+'\TestCase\TestCase.xlsx'
     print(testCaseFile)
     if not os.path.exists(testCaseFile):
-        logging.error('测试用例文件不存在！！！')
+        logging.error('excel文件不存在！！！')
         sys.exit()
     testCase = xlrd.open_workbook(testCaseFile)
     table = testCase.sheet_by_index(0)
@@ -116,6 +112,7 @@ Content-Transfer-Encoding:binary
 %s
 ------WebKitFormBoundaryDf9uRfwb8uzv1eNe--
     ''' % (os.path.basename(dataFile), data)
+
         status, resp = interfaceTest(num, api_purpose, api_host, request_url, request_data, check_point, request_method,
                                      request_data_type, correlationDict['${session}'])
         if status != 200:
@@ -148,12 +145,9 @@ def interfaceTest(num, api_purpose, api_host, request_url, request_data, check_p
                'X-Requested-With': 'XMLHttpRequest',
                'Connection': 'keep-alive',
                'Referer': 'http://' + api_host,
-               'Cookie': 'JSESSIONID=3058550F6907CA1D3CC6B1BC1DC5427E; loginUserName=yunying; loginUserPw=123456; '
-                         'UM_distinctid=15c7b84a63a4df-03faf8c0139ffb-62101875-144000-15c7b84a63b375; '
-                         'CNZZDATA5879641=cnzz_eid%3D657998674-1496719136-http%253A%252F%252Fsdcm142%253A8090%252F'
-                         '%26ntime%3D1502259962',
-               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
-                             'Chrome/43.0.2357.134 Safari/537.36'}
+               'Cookie': getcookie.getcookie(),
+               'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64) AppleWebKit/537.36 (KHTML, like Gecko) '
+                             'Chrome/58.0.3029.96 Safari/537.36'}
     if session is not None:
         headers['Cookie'] = 'session=' + session
         if request_data_type == 'File':
@@ -172,6 +166,7 @@ def interfaceTest(num, api_purpose, api_host, request_url, request_data, check_p
         return 400, request_method
     response = conn.getresponse()
     print(response.status)
+    print(response)
     status = response.status
     resp = response.read()
     if status == 200:
@@ -186,7 +181,6 @@ def interfaceTest(num, api_purpose, api_host, request_url, request_data, check_p
         logging.error(num + ' ' + api_purpose + ' 失败！！！, [ ' + str(status) + ' ], ' + str(resp))
         return status, resp.decode('utf-8')
 
-
 # 获取md5验证码
 def getMD5(url, postData):
     headers = {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -196,20 +190,17 @@ def getMD5(url, postData):
     response = conn.getresponse()
     return response.status, response.read()
 
-
 # hash1加密
 def hash1Encode(codeStr):
     hashobj = hashlib.sha1()
     hashobj.update(codeStr.encode('utf-8'))
     return hashobj.hexdigest()
 
-
 # DES加密
 def desEncode(desStr):
     k = des('secretKEY', padmode=PAD_PKCS5)
     encodeStr = base64.b64encode(k.encrypt(json.dumps(desStr)))
     return encodeStr
-
 
 # 字典排序
 def encodePostStr(postData):
@@ -226,35 +217,11 @@ def encodePostStr(postData):
     postData['token'] = token
     return desEncode(postData)
 
-
-# 发送通知邮件
-def sendMail(text):
-    sender = 'wzq0668@163.com'
-    receiver = ['wzq0668@163.com']
-    mailToCc = ['wzq0668@163.com']
-    subject = '[自动化测试报告]接口自动化测试报告通知'
-    smtpserver = 'smtp.163.com'
-    username = 'wzq0668@163.com'
-    password = '0'
-
-    msg = MIMEText(text, 'html', 'utf-8')
-    msg['Subject'] = subject
-    msg['From'] = sender
-    msg['To'] = ';'.join(receiver)
-    msg['Cc'] = ';'.join(mailToCc)
-    smtp = smtplib.SMTP()
-    smtp.connect(smtpserver)
-    smtp.login(username, password)
-    smtp.sendmail(sender, receiver + mailToCc, msg.as_string())
-    smtp.quit()
-
-
 def main():
-    errorTest = runTest('E:\JAVA\InterfaceTest-master\TestCase\TestCase.xlsx')
-    print(len(errorTest))
+    errorTest = runTest(basedata.PROJECT_LOCATION+'\TestCase\TestCase.xlsx')
     if len(errorTest) >= 0:
-        html = '<html><body><p>接口自动化定期扫描，共有 ' + str(len(
-            errorTest)) + ' 个异常接口，列表如下：' + '</p><table><tr><th style="width:100px;">接口</th><th ' \
+        html = '<html><body><p>共有 ' + str(len(
+            errorTest)) + ' 个异常接口:' + '</p><table><tr><th style="width:100px;">接口</th><th ' \
                                            'style="width:50px;">状态</th><th ' \
                                            'style="width:200px;">接口地址</th><th>接口返回值</th></tr> '
         for test in errorTest:
@@ -262,10 +229,10 @@ def main():
                 3] + '</td></tr>'
         html = html + '</table></body></html>'
         print(html)
-        f = open("demo_1.html", 'w')
+        sendmail.sendMail(html)
+        f = open("report.html", 'w')
         f.write(html)
         f.close()
-
 
 if __name__ == '__main__':
     main()
